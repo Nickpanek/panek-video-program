@@ -19,14 +19,19 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils libfuse2 zsync
-          sudo apt-get install -y ruby ruby-dev gcc make rpm
+          sudo apt-get install -y desktop-file-utils libfuse2 zsync ruby ruby-dev gcc make rpm
           sudo gem install --no-document fpm
 
       - name: Python deps
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install pyinstaller pyqt5
+
+      - name: Compute names
+        run: |
+          echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          echo "APPIMAGE_NAME=PanekVideoProgram-${GITHUB_REF_NAME}-x86_64.AppImage" >> $GITHUB_ENV
+          echo "DEB_NAME=panek-video-program_${GITHUB_REF_NAME#v}_amd64.deb" >> $GITHUB_ENV
 
       - name: Build binary with PyInstaller
         run: |
@@ -38,10 +43,10 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp dist/PanekVideoProgram AppDir/usr/bin/echo '#!/bin/sh' > AppDir/
+          cp dist/PanekVideoProgram AppDir/usr/bin/PanekVideoProgram
+          echo '#!/bin/sh' > AppDir/AppRun
           echo 'exec "$APPDIR/usr/bin/PanekVideoProgram" "$@"' >> AppDir/AppRun
           chmod +x AppDir/AppRun
-          # desktop file
           cat > AppDir/usr/share/applications/panek-video-program.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -52,14 +57,13 @@ Icon=panek-video-program
 Categories=AudioVideo;Video;
 Terminal=false
 EOF
-          # icon
           cp packaging/linux/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/panek-video-program.png
 
       - name: Build AppImage
         run: |
           wget -qO appimagetool https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage
           chmod +x appimagetool
-          ./appimagetool -n AppDir PanekVideoProgram-${{ github.ref_name }}-x86_64.AppImage
+          ./appimagetool -n AppDir "${APPIMAGE_NAME}"
 
       - name: Build .deb with fpm
         run: |
@@ -69,9 +73,9 @@ EOF
           cp dist/PanekVideoProgram pkgroot/usr/bin/PanekVideoProgram
           cp AppDir/usr/share/applications/panek-video-program.desktop pkgroot/usr/share/applications/
           cp AppDir/usr/share/icons/hicolor/256x256/apps/panek-video-program.png pkgroot/usr/share/icons/hicolor/256x256/apps/
-          fpm -s dir -t deb -n panek-video-program -v "${GITHUB_REF_NAME#v}" \
+          fpm -s dir -t deb -n panek-video-program -v "${TAG#v}" \
               --deb-no-default-config-files \
-              -p panek-video-program_${GITHUB_REF_NAME#v}_amd64.deb \
+              -p "${DEB_NAME}" \
               -C pkgroot \
               usr/bin/PanekVideoProgram \
               usr/share/applications/panek-video-program.desktop \
@@ -82,14 +86,14 @@ EOF
         with:
           name: linux-bundles
           path: |
-            PanekVideoProgram-${{ github.ref_name }}-x86_64.AppImage
-            panek-video-program_${{ github.ref_name#v }}_amd64.deb
+            ${{ env.APPIMAGE_NAME }}
+            ${{ env.DEB_NAME }}
 
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            PanekVideoProgram-${{ github.ref_name }}-x86_64.AppImage
-            panek-video-program_${{ github.ref_name#v }}_amd64.deb
+            ${{ env.APPIMAGE_NAME }}
+            ${{ env.DEB_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
