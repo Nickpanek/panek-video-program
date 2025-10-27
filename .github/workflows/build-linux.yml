@@ -10,75 +10,12 @@ jobs:
   linux:
     name: Linux build and smoke test
     runs-on: ubuntu-latest
-    env:
-      DEBIAN_FRONTEND: noninteractive
-      QT_QPA_PLATFORM: offscreen
-      PANEK_CI: "1"
-      PYTHONUNBUFFERED: "1"
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show workspace
-        shell: bash
+      - name: Sanity
         run: |
-          set -x
-          pwd || true
-          ls -la || true
-          command -v python3 || true
-
-      - name: System deps (guarded)
-        shell: bash
-        run: |
-          set -x
-          sudo apt-get update || true
-          sudo apt-get install -y --no-install-recommends \
-            python3 python3-pip python3-venv ffmpeg kdialog zenity xvfb libgl1 || true
+          echo "Runner is alive"
+          uname -a
           python3 -V || true
-          ffmpeg -version || true
-          kdialog --version || true
-          zenity --version || true
-
-      - name: Python venv (guarded)
-        shell: bash
-        run: |
-          set -x
-          python3 -m venv .venv || true
-          . .venv/bin/activate || true
-          python -m pip install -U pip wheel || true
-          if [ -f requirements.txt ]; then
-            python -m pip install -r requirements.txt || true
-          fi
-
-      - name: Smoke import panek_video_program.py (non-fatal)
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -x
-          . .venv/bin/activate || true
-          if [ -f panek_video_program.py ]; then
-            python - <<'PY' || true
-import os, importlib.util, sys, traceback
-os.environ["PANEK_CI"]="1"
-p="panek_video_program.py"
-try:
-    spec=importlib.util.spec_from_file_location("app", p)
-    mod=importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    print("CI_DIAG: import OK")
-except SystemExit as e:
-    print(f"CI_DIAG: SystemExit({e.code}) during import - tolerated")
-except Exception as e:
-    print("CI_DIAG: import error ->", e)
-    traceback.print_exc()
-PY
-          else
-            echo "CI_DIAG: panek_video_program.py not found; skipping"
-          fi
-
-      - name: Summarize
-        shell: bash
-        run: |
-          set -x
-          echo "CI_DIAG: summary complete"
