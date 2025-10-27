@@ -10,12 +10,51 @@ jobs:
   linux:
     name: Linux build and smoke test
     runs-on: ubuntu-latest
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PANEK_CI: "1"
+      PYTHONUNBUFFERED: "1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Sanity
+      - name: System deps
         run: |
-          echo "Runner is alive"
-          uname -a
-          python3 -V || true
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3 python3-pip python3-venv ffmpeg kdialog zenity xvfb libgl1
+
+      - name: Python venv
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install -U pip wheel
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+
+      - name: Smoke import
+        continue-on-error: true
+        run: |
+          . .venv/bin/activate
+          if [ -f panek_video_program.py ]; then
+            python - <<'PY'
+import os, importlib.util
+os.environ["PANEK_CI"]="1"
+p="panek_video_program.py"
+spec=importlib.util.spec_from_file_location("app", p)
+mod=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+print("Import OK")
+PY
+          else
+            echo "panek_video_program.py not found; skipping"
+          fi
+
+      - name: CLI --help (if present)
+        continue-on-error: true
+        run: |
+          . .venv/bin/activate
+          test -f panek_video_program.py && python panek_video_program.py --help || true
