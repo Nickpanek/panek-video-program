@@ -1,0 +1,95 @@
+name: release-linux
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils libfuse2 zsync
+          sudo apt-get install -y ruby ruby-dev gcc make rpm
+          sudo gem install --no-document fpm
+
+      - name: Python deps
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller pyqt5
+
+      - name: Build binary with PyInstaller
+        run: |
+          pyinstaller --name PanekVideoProgram --windowed panek_video_program.py
+          ls -lah dist/
+
+      - name: Prepare AppDir
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp dist/PanekVideoProgram AppDir/usr/bin/PanekVideoProgram
+          printf '%s\n' '#!/bin/sh' 'exec "$APPDIR/usr/bin/PanekVideoProgram" "$@"' > AppDir/AppRun
+          chmod +x AppDir/AppRun
+          # desktop file
+          cat > AppDir/usr/share/applications/panek-video-program.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Panek Video Program
+Comment=Create 16:9 videos from an image and audio
+Exec=PanekVideoProgram
+Icon=panek-video-program
+Categories=AudioVideo;Video;
+Terminal=false
+EOF
+          # icon
+          cp packaging/linux/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/panek-video-program.png
+
+      - name: Build AppImage
+        run: |
+          wget -qO appimagetool https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ./appimagetool -n AppDir PanekVideoProgram-${{ github.ref_name }}-x86_64.AppImage
+
+      - name: Build .deb with fpm
+        run: |
+          mkdir -p pkgroot/usr/bin
+          mkdir -p pkgroot/usr/share/applications
+          mkdir -p pkgroot/usr/share/icons/hicolor/256x256/apps
+          cp dist/PanekVideoProgram pkgroot/usr/bin/PanekVideoProgram
+          cp AppDir/usr/share/applications/panek-video-program.desktop pkgroot/usr/share/applications/
+          cp AppDir/usr/share/icons/hicolor/256x256/apps/panek-video-program.png pkgroot/usr/share/icons/hicolor/256x256/apps/
+          fpm -s dir -t deb -n panek-video-program -v "${GITHUB_REF_NAME#v}" \
+              --deb-no-default-config-files \
+              -p panek-video-program_${GITHUB_REF_NAME#v}_amd64.deb \
+              -C pkgroot \
+              usr/bin/PanekVideoProgram \
+              usr/share/applications/panek-video-program.desktop \
+              usr/share/icons/hicolor/256x256/apps/panek-video-program.png
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundles
+          path: |
+            PanekVideoProgram-${{ github.ref_name }}-x86_64.AppImage
+            panek-video-program_${{ github.ref_name#v }}_amd64.deb
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            PanekVideoProgram-${{ github.ref_name }}-x86_64.AppImage
+            panek-video-program_${{ github.ref_name#v }}_amd64.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
