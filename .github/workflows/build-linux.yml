@@ -1,0 +1,100 @@
+name: Build Linux AppImage and DEB
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller PyQt5
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg ruby ruby-dev rpm libfuse2
+          sudo gem install --no-document fpm
+          # AppImage tooling
+          curl -L https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage -o appimagetool
+          chmod +x appimagetool
+
+      - name: Build single-file binary with PyInstaller
+        run: |
+          pyinstaller --name panek-video-program \
+            --onefile \
+            --noconsole \
+            --add-data "packaging/linux/icon.png:." \
+            panek_video_program.py
+          ls -lah dist
+
+      - name: Prepare AppDir
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp dist/panek-video-program AppDir/usr/bin/panek-video-program
+          cp packaging/linux/appdir/panek-video.desktop AppDir/usr/share/applications/panek-video.desktop
+          cp packaging/linux/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/panek-video.png
+          # AppRun launcher
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export PATH="$HERE/usr/bin:$PATH"
+          exec "$HERE/usr/bin/panek-video-program" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+
+      - name: Build AppImage
+        run: |
+          ./appimagetool AppDir PanekVideoProgram-x86_64.AppImage
+          ls -lah PanekVideoProgram-x86_64.AppImage
+
+      - name: Build DEB with fpm
+        run: |
+          mkdir -p pkgroot/usr/bin
+          mkdir -p pkgroot/usr/share/applications
+          mkdir -p pkgroot/usr/share/icons/hicolor/256x256/apps
+          cp dist/panek-video-program pkgroot/usr/bin/panek-video-program
+          cp packaging/linux/panek-video.desktop pkgroot/usr/share/applications/panek-video.desktop
+          cp packaging/linux/icon.png pkgroot/usr/share/icons/hicolor/256x256/apps/panek-video.png
+          fpm -s dir -t deb \
+            -n panek-video-program \
+            -v "${GITHUB_REF_NAME#v}" \
+            -C pkgroot \
+            --license "Proprietary" \
+            --description "Turn an image and an audio file into a 16:9 MP4." \
+            --url "https://www.patternripple.com/lab/panekvideo/" \
+            --vendor "PatternRipple Labs" \
+            --maintainer "Nick Panek <maintainer@example.com>" \
+            usr/bin/panek-video-program \
+            usr/share/applications/panek-video.desktop \
+            usr/share/icons/hicolor/256x256/apps/panek-video.png
+          ls -lah *.deb
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            PanekVideoProgram-x86_64.AppImage
+            *.deb
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            PanekVideoProgram-x86_64.AppImage
+            *.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
