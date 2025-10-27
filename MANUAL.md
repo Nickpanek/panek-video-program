@@ -4,6 +4,8 @@
 
 Welcome! This manual will help you create professional 1920×1080 MP4 videos from a single image and audio file. Perfect for YouTube uploads, social media content, music releases, podcasts, and visual presentations.
 
+**🤖 Need Help?** Our [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) is trained on installation and troubleshooting across all platforms. Get instant answers 24/7!
+
 ---
 
 ## What Does It Do?
@@ -36,6 +38,8 @@ The video automatically scales your image to fit 1920×1080, adds black bars if 
 ---
 
 ## Installation
+
+**Need installation help?** Our [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) can walk you through the process step-by-step for your specific operating system.
 
 ### Linux Users (Recommended)
 
@@ -158,6 +162,10 @@ If you see version information, you're good to go!
 
 ## Troubleshooting
 
+**💡 Quick Help:** Can't find your answer below? Try our [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) for instant, personalized troubleshooting based on your specific system and issue.
+
+---
+
 ### "ffmpeg not found" Error
 **Problem:** The program can't find FFmpeg on your system.
 
@@ -198,6 +206,8 @@ If you see version information, you're good to go!
    ./PanekVideoProgram-x86_64.AppImage
    ```
 
+**Still stuck?** Paste your error message into the [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) for system-specific guidance.
+
 ### File Dialog Doesn't Open
 **Problem:** Nothing happens when clicking file selection buttons.
 
@@ -205,6 +215,8 @@ If you see version information, you're good to go!
 1. Update your system
 2. Install dialog tools: `sudo apt install kdialog zenity`
 3. Check the log window for specific errors
+
+**Need more help?** The [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) can diagnose dialog issues for your specific desktop environment.
 
 ---
 
@@ -266,6 +278,9 @@ Here are some ways people use Panek Video Program:
 
 ## Frequently Asked Questions
 
+**Q: Where can I get help if I'm stuck?**
+A: Try our [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) first! It's trained on installation and debugging across all platforms and can provide instant, personalized help. You can also check GitHub Issues or the troubleshooting section in this manual.
+
 **Q: Can I use this commercially?**
 A: Yes! You own all the videos you create. Use them however you like commercially.
 
@@ -311,15 +326,18 @@ cd panek-video-program
 python3 panek_video_program.py
 ```
 
+**Encountering errors?** The [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) can help debug Python dependencies and environment issues specific to your system.
+
 ---
 
 ## Support & Contact
 
 **Having issues?** Check the troubleshooting section above first.
 
-**Need help?** 
-- GitHub Issues: [https://github.com/Nickpanek/panek-video-program/issues](https://github.com/Nickpanek/panek-video-program/issues)
-- Website: [https://www.patternripple.com/panekvideo/](https://www.patternripple.com/panekvideo/)
+**Need help?**
+- **🤖 AI Help Desk:** [Panek Video Program Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) - Custom GPT trained on installation and debugging across all platforms
+- **GitHub Issues:** [Report bugs or request features](https://github.com/Nickpanek/panek-video-program/issues)
+- **Website:** [https://www.patternripple.com/panekvideo/](https://www.patternripple.com/panekvideo/)
 
 **Want to support development?**
 - [Buy Me a Coffee](https://buymeacoffee.com/prompternick)
@@ -333,6 +351,7 @@ python3 panek_video_program.py
 **Supported Audio Formats:** MP3, WAV  
 **Output Format:** MP4 (1920×1080, H.264, AAC)  
 **Required Software:** FFmpeg  
+**🤖 Get Help:** [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk)
 
 **Basic Workflow:**
 1. Choose output folder (optional)
