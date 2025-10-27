@@ -11,7 +11,7 @@ The application has been rebuilt from the ground up, moving from a single-file `
 
 ### Key Architectural & Feature Changes
 
-* **Framework Migration: `PyQt5` $\to$ `PySide6`**
+* **Framework Migration: `PyQt5` to `PySide6`**
     The entire application has been ported from `PyQt5` to `PySide6`. This moves the project to a more modern toolkit with a more flexible (LGPL) license, ensuring future compatibility and easier distribution.
 
 * **New Architecture: Decoupled UI and Backend**
