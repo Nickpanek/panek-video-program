@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Panek Video Program
+Comment=Turn an image and audio file into a 16:9 MP4
+Exec=panek-video-program
+Icon=panek-video
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Graphics;
