@@ -38,8 +38,8 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp dist/PanekVideoProgram AppDir/usr/bin/PanekVideoProgram
-          printf '%s\n' '#!/bin/sh' 'exec "$APPDIR/usr/bin/PanekVideoProgram" "$@"' > AppDir/AppRun
+          cp dist/PanekVideoProgram AppDir/usr/bin/echo '#!/bin/sh' > AppDir/
+          echo 'exec "$APPDIR/usr/bin/PanekVideoProgram" "$@"' >> AppDir/AppRun
           chmod +x AppDir/AppRun
           # desktop file
           cat > AppDir/usr/share/applications/panek-video-program.desktop <<'EOF'
