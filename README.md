@@ -13,7 +13,7 @@ A simple desktop tool that takes **one image** + **one audio file** and renders 
 - Native system file dialogs:
   - KDE → `kdialog`
   - GNOME/XFCE → `zenity`
-  - macOS → `osascript`
+  - macOS → `osascript` (if developed)
   - fallback → Qt dialog
 - Render button only enables when both files are selected
 - Output filename auto-generates if no title is given
