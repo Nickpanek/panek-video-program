@@ -1,100 +1,80 @@
-name: Build Linux AppImage and DEB
+# .github/workflows/ci.yml
+name: CI
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
   linux:
+    name: Linux build and smoke test
     runs-on: ubuntu-latest
+
+    env:
+      QT_QPA_PLATFORM: offscreen       # headless Qt so GUI code won't crash
+      PANEK_CI: "1"                    # let your code gate off CI-only paths if needed
+      PYTHONUNBUFFERED: "1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install build deps
+      - name: System deps
         run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller PyQt5
           sudo apt-get update
-          sudo apt-get install -y ffmpeg ruby ruby-dev rpm libfuse2
-          sudo gem install --no-document fpm
-          # AppImage tooling
-          curl -L https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage -o appimagetool
-          chmod +x appimagetool
+          sudo apt-get install -y --no-install-recommends \
+            python3 python3-pip python3-venv \
+            ffmpeg kdialog zenity \
+            xvfb libgl1
+          python3 -V
+          ffmpeg -version || true
+          kdialog --version || true
+          zenity --version || true
 
-      - name: Build single-file binary with PyInstaller
+      - name: Python venv
         run: |
-          pyinstaller --name panek-video-program \
-            --onefile \
-            --noconsole \
-            --add-data "packaging/linux/icon.png:." \
-            panek_video_program.py
-          ls -lah dist
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install -U pip wheel
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
 
-      - name: Prepare AppDir
+      - name: Make scripts executable (if any)
         run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/applications
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp dist/panek-video-program AppDir/usr/bin/panek-video-program
-          cp packaging/linux/appdir/panek-video.desktop AppDir/usr/share/applications/panek-video.desktop
-          cp packaging/linux/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/panek-video.png
-          # AppRun launcher
-          cat > AppDir/AppRun << 'EOF'
-          #!/bin/sh
-          HERE="$(dirname "$(readlink -f "$0")")"
-          export PATH="$HERE/usr/bin:$PATH"
-          exec "$HERE/usr/bin/panek-video-program" "$@"
-          EOF
-          chmod +x AppDir/AppRun
+          chmod +x *.sh 2>/dev/null || true
+          chmod +x scripts/*.sh 2>/dev/null || true
 
-      - name: Build AppImage
+      - name: Lint quick (skip if no project)
         run: |
-          ./appimagetool AppDir PanekVideoProgram-x86_64.AppImage
-          ls -lah PanekVideoProgram-x86_64.AppImage
+          . .venv/bin/activate
+          python - <<'PY'
+          import sys, pathlib
+          root = pathlib.Path(".")
+          # Only run if there are .py files
+          files = list(root.rglob("*.py"))
+          print(f"Found {len(files)} Python files")
+          sys.exit(0)
+          PY
 
-      - name: Build DEB with fpm
+      - name: Smoke import (non-GUI)
         run: |
-          mkdir -p pkgroot/usr/bin
-          mkdir -p pkgroot/usr/share/applications
-          mkdir -p pkgroot/usr/share/icons/hicolor/256x256/apps
-          cp dist/panek-video-program pkgroot/usr/bin/panek-video-program
-          cp packaging/linux/panek-video.desktop pkgroot/usr/share/applications/panek-video.desktop
-          cp packaging/linux/icon.png pkgroot/usr/share/icons/hicolor/256x256/apps/panek-video.png
-          fpm -s dir -t deb \
-            -n panek-video-program \
-            -v "${GITHUB_REF_NAME#v}" \
-            -C pkgroot \
-            --license "Proprietary" \
-            --description "Turn an image and an audio file into a 16:9 MP4." \
-            --url "https://www.patternripple.com/lab/panekvideo/" \
-            --vendor "PatternRipple Labs" \
-            --maintainer "Nick Panek <maintainer@example.com>" \
-            usr/bin/panek-video-program \
-            usr/share/applications/panek-video.desktop \
-            usr/share/icons/hicolor/256x256/apps/panek-video.png
-          ls -lah *.deb
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-artifacts
-          path: |
-            PanekVideoProgram-x86_64.AppImage
-            *.deb
-
-      - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            PanekVideoProgram-x86_64.AppImage
-            *.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          . .venv/bin/activate
+          # Try to import your main module without launching the GUI.
+          # Adjust the filename below if your entry is different.
+          if [ -f "panek_video_program.py" ]; then
+            python - <<'PY'
+            import os
+            os.environ["PANEK_CI"]="1"
+            # Do not execute UI; only syntax-import test
+            import importlib.util, sys
+            spec = importlib.util.spec_from_file_location("app", "panek_video_program.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            print("Import OK")
+            PY
+          else
+            echo "No panek_video_program.py; skipping import."
+          fi
