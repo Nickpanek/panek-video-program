@@ -25,13 +25,13 @@ jobs:
       - name: Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pyqt5
+          pip install pyqt5 pyinstaller
 
       - name: Compute names
         run: |
           echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
           echo "APPIMAGE_NAME=PanekVideoProgram-${GITHUB_REF_NAME}-x86_64.AppImage" >> $GITHUB_ENV
-          echo "DEB_NAME=panek-video-program_${GITHUB_REF_NAME#v}_amd64.deb" >> $GITHUB_ENV
+          echo "DEB_NAME=panek-video-program_${GITHUB_REF_NAME}_amd64.deb" >> $GITHUB_ENV
 
       - name: Build binary with PyInstaller
         run: |
@@ -48,15 +48,15 @@ jobs:
           echo 'exec "$APPDIR/usr/bin/PanekVideoProgram" "$@"' >> AppDir/AppRun
           chmod +x AppDir/AppRun
           cat > AppDir/usr/share/applications/panek-video-program.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Panek Video Program
-Comment=Create 16:9 videos from an image and audio
-Exec=PanekVideoProgram
-Icon=panek-video-program
-Categories=AudioVideo;Video;
-Terminal=false
-EOF
+          [Desktop Entry]
+          Type=Application
+          Name=Panek Video Program
+          Comment=Create 16:9 videos from an image and audio
+          Exec=PanekVideoProgram
+          Icon=panek-video-program
+          Categories=AudioVideo;Video;
+          Terminal=false
+          EOF
           cp packaging/linux/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/panek-video-program.png
 
       - name: Build AppImage
@@ -75,11 +75,11 @@ EOF
           cp AppDir/usr/share/icons/hicolor/256x256/apps/panek-video-program.png pkgroot/usr/share/icons/hicolor/256x256/apps/
           fpm -s dir -t deb -n panek-video-program -v "${TAG#v}" \
               --deb-no-default-config-files \
-              -p "${DEB_NAME}" \
               -C pkgroot \
               usr/bin/PanekVideoProgram \
               usr/share/applications/panek-video-program.desktop \
               usr/share/icons/hicolor/256x256/apps/panek-video-program.png
+          mv *.deb "${DEB_NAME}"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
