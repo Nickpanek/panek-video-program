@@ -1,4 +1,4 @@
-name: CI
+name: Build Linux
 
 on:
   push:
@@ -10,6 +10,7 @@ jobs:
   linux:
     name: Linux build and smoke test
     runs-on: ubuntu-latest
+
     env:
       DEBIAN_FRONTEND: noninteractive
       QT_QPA_PLATFORM: offscreen
@@ -24,10 +25,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "CI_DIAG: pwd=$(pwd)"
-          echo "CI_DIAG: tree:"
-          sudo apt-get update && sudo apt-get install -y tree >/dev/null 2>&1 || true
-          tree -a -L 3 || ls -la
+          pwd
+          ls -la
 
       - name: System deps
         shell: bash
@@ -35,9 +34,8 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            python3 python3-pip python3-venv \
-            ffmpeg kdialog zenity xvfb libgl1
-          python3 -V
+            python3 python3-pip python3-venv ffmpeg kdialog zenity xvfb libgl1
+          python3 -V || true
           ffmpeg -version || true
           kdialog --version || true
           zenity --version || true
@@ -51,60 +49,15 @@ jobs:
           python -m pip install -U pip wheel
           if [ -f requirements.txt ]; then
             python -m pip install -r requirements.txt
-          else
-            echo "CI_DIAG: no requirements.txt"
           fi
 
-      - name: Lint presence only
+      - name: Optional smoke import
         shell: bash
         run: |
           set -euo pipefail
           . .venv/bin/activate
-          python - <<'PY'
-import pathlib
-files = list(pathlib.Path(".").rglob("*.py"))
-print(f"CI_DIAG: found {len(files)} python files")
-PY
-
-      - name: Smoke import (guarded)
-        shell: bash
-        run: |
-          set -euo pipefail
-          . .venv/bin/activate
-          TARGET="panek_video_program.py"
-          if [ -f "$TARGET" ]; then
-            echo "CI_DIAG: trying import of $TARGET"
-            python - <<'PY'
-import os, importlib.util, sys
-os.environ["PANEK_CI"]="1"
-path="panek_video_program.py"
-spec=importlib.util.spec_from_file_location("app", path)
-mod=importlib.util.module_from_spec(spec)
-try:
-    spec.loader.exec_module(mod)
-    print("CI_DIAG: import OK")
-    sys.exit(0)
-except SystemExit as e:
-    print(f"CI_DIAG: SystemExit code={e.code}")
-    # Normalize non-zero exits to success so CI continues
-    sys.exit(0)
-except Exception as e:
-    print("CI_DIAG: import error:", e)
-    sys.exit(1)
-PY
+          if [ -f panek_video_program.py ]; then
+            python -c "import os,importlib.util as iu; os.environ['PANEK_CI']='1'; p='panek_video_program.py'; s=iu.spec_from_file_location('app',p); m=iu.module_from_spec(s); s.loader.exec_module(m); print('Import OK')"
           else
-            echo "CI_DIAG: $TARGET not found; skipping import"
-          fi
-
-      - name: Run non-interactive CLI test (guarded)
-        shell: bash
-        run: |
-          set -euo pipefail
-          . .venv/bin/activate
-          # If you have a CLI entry that supports --help, test it. Otherwise skip.
-          if grep -q "argparse" -n panek_video_program.py 2>/dev/null; then
-            echo "CI_DIAG: running --help"
-            python panek_video_program.py --help || true
-          else
-            echo "CI_DIAG: no CLI; skipping"
+            echo "panek_video_program.py not found, skipping"
           fi
