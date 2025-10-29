@@ -132,6 +132,8 @@ If you see version information, you're good to go!
    - You'll see a progress bar as the video is created
    - This can take a few seconds to several minutes depending on audio length
 
+**New in v2.0:** If a file with the same name already exists, the program will ask if you want to overwrite it. Choose "Yes" to replace it or "No" to cancel and choose a different name.
+
 7. **Done!**
    - A popup will show you where your video was saved
    - You can render another video or close the program
@@ -316,14 +318,15 @@ If you want to run the program from Python source code:
 
 ```bash
 # Install dependencies
-sudo apt install ffmpeg python3-pyqt5
-
-# Clone the repository
-git clone https://github.com/Nickpanek/panek-video-program.git
-cd panek-video-program
-
-# Run the program
-python3 panek_video_program.py
+   sudo apt install ffmpeg
+   pip install PySide6 qdarktheme
+   
+   # Clone the repository
+   git clone https://github.com/Nickpanek/panek-video-program.git
+   cd panek-video-program
+   
+   # Run the program
+   python3 panek_video_program.py
 ```
 
 **Encountering errors?** The [AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk) can help debug Python dependencies and environment issues specific to your system.
