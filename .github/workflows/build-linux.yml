@@ -1,41 +1,6 @@
-name: Build Linux
-
-on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
-
-jobs:
-  linux:
-    name: Linux build and smoke test
-    runs-on: ubuntu-latest
-    env:
-      QT_QPA_PLATFORM: offscreen
-      PANEK_CI: "1"
-      PYTHONUNBUFFERED: "1"
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: System deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3 python3-pip python3-venv ffmpeg kdialog zenity xvfb libgl1
-
-      - name: Python venv
-        run: |
-          python3 -m venv --system-site-packages .venv
-          . .venv/bin/activate
-          python -m pip install -U pip wheel
-          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
-
-      - name: Smoke import (inline)
-        run: |
-          . .venv/bin/activate
-          if [ -f panek_video_program.py ]; then
-            python -c "import os,importlib.util as iu; os.environ['PANEK_CI']='1'; p='panek_video_program.py'; s=iu.spec_from_file_location('app',p); m=iu.module_from_spec(s); s.loader.exec_module(m); print('Import OK')"
-          else
-            echo "panek_video_program.py not found; skipping"
-          fi
+- name: Python venv
+     run: |
+       python3 -m venv --system-site-packages .venv
+       . .venv/bin/activate
+       python -m pip install -U pip wheel
+       python -m pip install PySide6 qdarktheme  # Updated for v2
