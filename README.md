@@ -1,9 +1,13 @@
 # Panek Video Program
 
 A simple desktop tool that takes **one image** + **one audio file** and renders a clean **1920×1080 MP4** with AAC audio. Designed for artists, musicians, designers, and anyone making YouTube, TikTok, Loom, Shorts, Reels, or visual loop content. 
-## 🚀 Upcoming v2.0: The PySide6 Modernization Refactor
 
-We are excited to announce an upcoming, major rewrite of the Panek Video Program. This update is currently in testing and will completely modernize the codebase, improve the user experience, and establish a professional architecture that is more stable, maintainable, and responsive.
+**Current Version:** v2.0.0 (PySide6) | [Download Latest](https://github.com/Nickpanek/panek-video-program/releases/latest)  
+**Legacy Version:** v1.0.1 (PyQt5) | [Download v1.0.1](https://github.com/Nickpanek/panek-video-program/releases/tag/v1.0.1)
+
+## 🚀 v2.0: The PySide6 Modernization Refactor (Released!)
+
+We are excited to announce the release of v2.0, a major rewrite of the Panek Video Program. This update completely modernizes the codebase, improves the user experience, and establishes a professional architecture that is more stable, maintainable, and responsive.
 
 ### Summary of Changes
 
@@ -20,7 +24,7 @@ The application has been rebuilt from the ground up, moving from a single-file `
 
 * **New UI: Professional Dark Theme & Minimalist Layout**
     * **Before:** The UI used custom-coded stylesheets (e.g., the gray/green render button, colored labels) that were difficult to maintain.
-    * **After:** All custom stylesheets have been removed. The app now uses the `pyqtdarktheme` library to apply a consistent, professional, and fully-featured dark theme with a single line of code. The layout has also been simplified from manual `QHBoxLayout`s to a clean `QFormLayout`.
+    * **After:** All custom stylesheets have been removed. The app now uses the `qdarktheme` library to apply a consistent, professional, and fully-featured dark theme with a single line of code. The layout has also been simplified from manual `QHBoxLayout`s to a clean `QFormLayout`.
 
 * **New Feature: File Overwrite Confirmation**
     * **Before:** The app used an `ffmpeg -y` flag, which would *silently overwrite* any existing video with the same name.
@@ -47,14 +51,12 @@ To run this new version, the dependencies will change.
 
 **New Dependencies:**
 * `PySide6`
-* `pyqtdarktheme`
+* `qdarktheme`
 
 They can be installed via pip:
 ```bash
-pip install PySide6
-pip install pyqtdarktheme
-
-
+pip install PySide6 qdarktheme
+```
 
 ### 📖 Documentation & Support
 - **[User Manual](MANUAL.md)** - Complete guide with installation, usage, and troubleshooting
@@ -64,11 +66,7 @@ pip install pyqtdarktheme
 - Supports **JPG, PNG, WEBP** images
 - Supports **MP3 and WAV** audio
 - Output: **H.264 MP4**, yuv420p, CRF 20, faststart enabled
-- Native system file dialogs:
-  - KDE → `kdialog`
-  - GNOME/XFCE → `zenity`
-  - macOS → `osascript` (if developed)
-  - fallback → Qt dialog
+- Native system file dialogs via QFileDialog (automatically maps to system's native dialog)
 - Render button only enables when both files are selected
 - Output filename auto-generates if no title is given
 
@@ -86,6 +84,10 @@ Download the `.AppImage` or `.deb` from Releases:
 
 ### Run (Source)
 ```bash
+# Install dependencies
+pip install PySide6 qdarktheme
+
+# Run the program
 python3 panek_video_program.py
 ```
 
