@@ -1,180 +1,113 @@
 #!/usr/bin/env python3
-# Panek Video Program - Qt edition (tutorial + gray->green render state)
-# Deps: ffmpeg, ffprobe, python3-pyqt5
-# Optional deps for native dialogs: kdialog, zenity, osascript
+"""
+Panek Video Program - Refactored PySide6 Edition (Single File, v3)
 
-import os, re, sys, shutil, datetime, subprocess
+This application is a single-file refactor of the original PyQt5 script,
+built using PySide6 and adhering to the principles outlined in
+"Architecting a Modern Python Desktop Application":
+- Modern PySide6 Framework
+- Minimalist UI with a Global Dark Theme (pyqtdarktheme)
+- Asynchronous Backend (FFmpegRunner with QProcess)
+- Decoupled UI and Logic (Signals and Slots)
+- Simplified Native Dialogs (QFileDialog)
+
+Version 3 Changes:
+- Added a "Confirm Overwrite" dialog if the output file already exists,
+  as suggested by the provided analysis.
+- Refactored path/title generation from the runner to the UI class
+  to facilitate the overwrite check.
+"""
+
+import sys
+import os
+import re
+import shutil
+import datetime
+import subprocess
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QProcess, QTimer
-from PyQt5.QtWidgets import (
+# Import all necessary PySide6 components
+from PySide6.QtCore import QObject, QProcess, Signal, Qt, QTimer
+from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton,
     QFileDialog, QLineEdit, QHBoxLayout, QProgressBar, QTextEdit,
-    QDialog, QDialogButtonBox
+    QDialog, QDialogButtonBox, QMainWindow, QFormLayout, QMessageBox
 )
 
+# Import the dark theme library
+# Requires: pip install pyqtdarktheme
+import qdarktheme
+
+# ---------- Constants ----------
 WIDTH, HEIGHT, FPS, CRF = 1920, 1080, 30, 20
 AUDIO_BITRATE = "192k"
 
-# ---------- utilities ----------
+# ---------- Core Utilities ----------
 
 def have(cmd: str) -> bool:
+    """Check if a command-line utility is available in the system's PATH."""
     return shutil.which(cmd) is not None
 
 def ensure_ffmpeg():
+    """Raise a RuntimeError if ffmpeg or ffprobe are not found."""
     if not have("ffmpeg") or not have("ffprobe"):
-        raise RuntimeError("ffmpeg or ffprobe not found in PATH")
+        raise RuntimeError("ffmpeg and/or ffprobe not found in your system's PATH.")
 
 def sanitize_filename(name: str) -> str:
+    """Clean a string to be a valid, safe filename."""
     name = name.strip()
     name = re.sub(r"[^\w\-. ]+", "_", name)
     name = re.sub(r"\s+", " ", name).strip()
     return name or "output"
 
-# ---------- native dialog helpers (cascade: kdialog -> zenity -> osascript -> Qt) ----------
-
-# kdialog (KDE/Plasma)
-def kde_getopenfilename(title: str, filters: list) -> str:
-    if have("kdialog"):
-        flt = " | ".join(filters)
-        proc = subprocess.run(
-            ["kdialog", "--getopenfilename", os.path.expanduser("~"), flt, "--title", title],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
-        return proc.stdout.strip()
-    return ""
-
-def kde_getexistingdirectory(title: str, start_dir: str) -> str:
-    if have("kdialog"):
-        proc = subprocess.run(
-            ["kdialog", "--getexistingdirectory", start_dir, "--title", title],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
-        return proc.stdout.strip()
-    return ""
-
-# zenity (GNOME, XFCE, Cinnamon, MATE, many Linux distros)
-def zenity_getopenfilename(title: str, patterns: list) -> str:
-    if not have("zenity"):
-        return ""
-    # Build one or more --file-filter entries like: "Images | *.jpg *.jpeg *.png *.webp"
-    args = ["zenity", "--file-selection", "--title", title]
-    if patterns:
-        args += ["--file-filter", f"Supported | {' '.join(patterns)}",
-                 "--file-filter", "All files | *"]
-    proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return proc.stdout.strip()
-
-def zenity_getexistingdirectory(title: str, start_dir: str) -> str:
-    if not have("zenity"):
-        return ""
-    args = ["zenity", "--file-selection", "--directory", "--title", title]
-    if start_dir:
-        args += ["--filename", os.path.join(start_dir, "")]
-    proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return proc.stdout.strip()
-
-# osascript (macOS)
-def osascript_choose_file(title: str) -> str:
-    if sys.platform != "darwin" or not have("osascript"):
-        return ""
-    # Use System Events for a standard macOS dialog. No filetype filter to avoid fragility.
-    script = f'''tell application "System Events"
-set f to choose file with prompt "{title}"
-POSIX path of f
-end tell'''
-    proc = subprocess.run(["osascript", "-e", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return proc.stdout.strip()
-
-def osascript_choose_folder(title: str, start_dir: str) -> str:
-    if sys.platform != "darwin" or not have("osascript"):
-        return ""
-    start_clause = ""
-    if start_dir:
-        start_clause = f' default location POSIX file "{start_dir}"'
-    script = f'''tell application "System Events"
-set f to choose folder with prompt "{title}"{start_clause}
-POSIX path of f
-end tell'''
-    proc = subprocess.run(["osascript", "-e", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return proc.stdout.strip()
-
-# Qt generic fallback
-def qt_getopenfilename(parent: QWidget, title: str, name_filter: str) -> str:
-    path, _ = QFileDialog.getOpenFileName(parent, title, str(Path.home()), name_filter)
-    return path or ""
-
-def qt_getexistingdirectory(parent: QWidget, title: str, start_dir: str) -> str:
-    path = QFileDialog.getExistingDirectory(parent, title, start_dir)
-    return path or ""
-
-# High level cascade
-def cascade_get_open_file(parent: QWidget, title: str, kdialog_filters: list, zenity_patterns: list, qt_name_filter: str) -> str:
-    return (
-        kde_getopenfilename(title, kdialog_filters) or
-        zenity_getopenfilename(title, zenity_patterns) or
-        osascript_choose_file(title) or
-        qt_getopenfilename(parent, title, qt_name_filter)
-    )
-
-def cascade_get_directory(parent: QWidget, title: str, start_dir: str) -> str:
-    return (
-        kde_getexistingdirectory(title, start_dir) or
-        zenity_getexistingdirectory(title, start_dir) or
-        osascript_choose_folder(title, start_dir) or
-        qt_getexistingdirectory(parent, title, start_dir)
-    )
-
-# ---------- media ----------
-
 def ffprobe_duration_seconds(path: str) -> float:
+    """
+    Get the duration of a media file in seconds using ffprobe.
+    This is a synchronous (blocking) call, but ffprobe is fast.
+    """
+    # Add CREATE_NO_WINDOW flag for Windows to suppress console popup
+    creation_flags = 0
+    if sys.platform == 'win32':
+        creation_flags = subprocess.CREATE_NO_WINDOW
+
     proc = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", path],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        creationflags=creation_flags
     )
     try:
         return float(proc.stdout.strip())
     except Exception:
         return 0.0
 
-def build_ffmpeg_cmd(image_path: str, audio_path: str, out_path: str, title: str) -> list:
-    vf = f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2"
-    return [
-        "ffmpeg","-y","-loop","1","-i",image_path,"-i",audio_path,
-        "-c:v","libx264","-preset","medium","-crf",str(CRF),"-tune","stillimage",
-        "-vf",vf,"-r",str(FPS),"-pix_fmt","yuv420p",
-        "-c:a","aac","-b:a",AUDIO_BITRATE,"-shortest",
-        "-movflags","+faststart",
-        "-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709",
-        "-metadata",f"title={title}",
-        "-progress","pipe:2","-nostats",
-        out_path,
-    ]
-
-# ---------- UI ----------
+# ---------- UI: Complete Dialog ----------
 
 class CompleteDialog(QDialog):
+    """
+    A dialog shown on successful render.
+    """
     def __init__(self, out_path: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Render complete")
+        self.setWindowTitle("Render Complete")
         self.setModal(True)
-        self.resize(520, 220)
+        self.resize(520, 200)
 
-        self.timer = QTimer(self); self.timer.timeout.connect(self._tick)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._tick)
         self.seconds = 30
 
         lay = QVBoxLayout(self)
         self.msg = QLabel(self)
-        self.msg.setTextFormat(Qt.RichText)
-        self.msg.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.msg.setTextFormat(Qt.TextFormat.RichText)
+        self.msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         self.msg.setOpenExternalLinks(True)
         self.out_path = out_path
         lay.addWidget(self.msg)
 
         btns = QDialogButtonBox(self)
-        self.again_btn = btns.addButton("Render another", QDialogButtonBox.AcceptRole)
-        self.close_btn = btns.addButton("Close now", QDialogButtonBox.RejectRole)
+        self.again_btn = btns.addButton("Render Another", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.close_btn = btns.addButton(f"Close (in {self.seconds})", QDialogButtonBox.ButtonRole.RejectRole)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
@@ -183,214 +116,420 @@ class CompleteDialog(QDialog):
         self.timer.start(1000)
 
     def _refresh_text(self):
+        """Update the label text."""
         self.msg.setText(
-            f"Video created:<br><code>{self.out_path}</code><br><br>"
-            f"Auto closing in <b>{self.seconds}</b> seconds.<br><br>"
-            '<a href="https://buymeacoffee.com/prompternick">Buy Me a Coffee</a>  •  '
-            '<a href="https://www.patternripple.com/lab">PatternRipple Lab</a>'
+            f"Video created successfully:<br><code>{self.out_path}</code>"
         )
+        self.close_btn.setText(f"Close (in {self.seconds})")
 
     def _tick(self):
+        """Handle the 1-second timer tick."""
         self.seconds -= 1
-        if self.seconds <= 0:
-            self.reject()
-            return
         self._refresh_text()
+        if self.seconds <= 0:
+            self.timer.stop()
+            self.reject() # Auto-reject (close) when timer hits zero
 
-class MainUI(QWidget):
+# ---------- Core: FFmpeg Runner ----------
+
+class FFmpegRunner(QObject):
+    """
+    Runs ffmpeg in a non-blocking QProcess, decoupling it from the UI.
+    This class is based on the architecture from the guide.
+    """
+    # Signals to communicate with the main UI thread
+    process_started = Signal()
+    process_finished = Signal(int, str)  # Emits exit_code, output_path
+    log_message = Signal(str)            # Emits log lines
+    progress_updated = Signal(int)       # Emits progress percentage (0-100)
+
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Panek Video Program")
-        self.setMinimumWidth(680)
+        self.process = QProcess()
+        
+        # We will read progress from stdout and logs from stderr
+        self.process.readyReadStandardOutput.connect(self._read_progress)
+        self.process.readyReadStandardError.connect(self._read_logs)
+        self.process.finished.connect(self._on_finished)
+        self.process.started.connect(self.process_started.emit)
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(16,16,16,16); lay.setSpacing(10)
+        self.audio_duration = 0.0
+        self.output_path = ""
 
-        header = QLabel("Panek Video Program"); header.setAlignment(Qt.AlignHCenter)
-        header.setStyleSheet("font-size:20px;font-weight:600;")
-        sub = QLabel("Create a 16:9 MP4 from an image and an MP3/WAV"); sub.setAlignment(Qt.AlignHCenter)
-        sub.setStyleSheet("color:#666;")
-
-        # One-line tutorial
-        tutorial = QLabel("Choose image and audio, optionally set title and output, then click Render.")
-        tutorial.setAlignment(Qt.AlignHCenter)
-        tutorial.setStyleSheet("color:#777;")
-
-        # Output folder
-        out_row = QHBoxLayout()
-        self.output_dir = os.getcwd()
-        self.output_dir_edit = QLineEdit(self.output_dir); self.output_dir_edit.setReadOnly(True)
-        out_btn = QPushButton("Choose Output Folder"); out_btn.clicked.connect(self.on_choose_output_dir)
-        out_row.addWidget(self.output_dir_edit,1); out_row.addWidget(out_btn)
-
-        # Title
-        title_row = QHBoxLayout()
-        self.title_input = QLineEdit(); self.title_input.setPlaceholderText("Optional title. Blank uses timestamp.")
-        title_row.addWidget(self.title_input,1)
-
-        # Choose buttons
-        choose_row = QHBoxLayout()
-        self.choose_img_btn = QPushButton("Choose Image")
-        self.choose_img_btn.clicked.connect(self.on_choose_image)
-        self.choose_aud_btn = QPushButton("Choose Audio")
-        self.choose_aud_btn.clicked.connect(self.on_choose_audio)
-        choose_row.addWidget(self.choose_img_btn)
-        choose_row.addWidget(self.choose_aud_btn)
-
-        # Selected paths preview
-        self.img_label = QLabel("Image: not selected"); self.img_label.setStyleSheet("color:#555;")
-        self.aud_label = QLabel("Audio: not selected"); self.aud_label.setStyleSheet("color:#555;")
-
-        # Render button with dynamic style
-        self.make_btn = QPushButton("Render Video")
-        self._apply_render_style(enabled=False)
-        self.make_btn.setEnabled(False)
-        self.make_btn.clicked.connect(self.on_render_clicked)
-
-        # Progress + log
-        self.progress = QProgressBar(); self.progress.setRange(0,100); self.progress.setValue(0)
-        self.status = QLabel("Idle"); self.status.setStyleSheet("color:#555;")
-        self.log = QTextEdit(); self.log.setReadOnly(True); self.log.setMinimumHeight(180); self.log.setStyleSheet("font-family:monospace;")
-
-        # Footer links
-        footer = QLabel(
-            '<div style="text-align:center;">'
-            '<a href="https://buymeacoffee.com/prompternick" style="color:#0077cc;">Buy Me a Coffee</a>'
-            '  •  '
-            '<a href="https://www.patternripple.com/lab" style="color:#0077cc;">PatternRipple Lab</a>'
-            '</div>'
-        )
-        footer.setOpenExternalLinks(True); footer.setAlignment(Qt.AlignHCenter)
-
-        # Layout
-        lay.addWidget(header); lay.addWidget(sub); lay.addWidget(tutorial)
-        lay.addLayout(out_row); lay.addLayout(title_row)
-        lay.addLayout(choose_row)
-        lay.addWidget(self.img_label); lay.addWidget(self.aud_label)
-        lay.addWidget(self.make_btn)
-        lay.addWidget(self.progress); lay.addWidget(self.status); lay.addWidget(self.log); lay.addWidget(footer)
-
-        # State
-        self.image_path = ""; self.audio_path = ""; self.out_path = ""; self.audio_duration = 0.0; self.proc = None
-
-    # Styling helper
-    def _apply_render_style(self, enabled: bool):
-        if enabled:
-            self.make_btn.setStyleSheet(
-                "QPushButton { background-color:#2ecc71; color:white; font-weight:600; padding:8px 14px; }"
-                "QPushButton:hover { background-color:#28b862; }"
-            )
-        else:
-            self.make_btn.setStyleSheet(
-                "QPushButton { background-color:#e0e0e0; color:#444; padding:8px 14px; }"
-            )
-
-    def append_log(self, s: str): self.log.append(s)
-
-    def _maybe_enable_render(self):
-        ready = bool(self.image_path and self.audio_path)
-        self.make_btn.setEnabled(ready)
-        self._apply_render_style(enabled=ready)
-
-    # -------- dialog entry points using cascade --------
-
-    def on_choose_output_dir(self):
-        path = cascade_get_directory(self, "Choose output folder", self.output_dir)
-        if path:
-            self.output_dir = path.rstrip("/")  # normalize macOS path from osascript
-            self.output_dir_edit.setText(self.output_dir)
-            self.append_log(f"Output folder: {self.output_dir}")
-
-    def on_choose_image(self):
-        # Filters for each layer
-        kdlg_filters = ["Images (*.jpg *.jpeg *.png *.webp)", "All files (*.*)"]
-        zen_patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"]
-        qt_filter = "Images (*.jpg *.jpeg *.png *.webp);;All files (*.*)"
-        path = cascade_get_open_file(self, "Choose 16:9 image", kdlg_filters, zen_patterns, qt_filter)
-        if path:
-            self.image_path = path
-            self.img_label.setText(f"Image: {path}")
-            self.append_log(f"Image: {path}")
-            self._maybe_enable_render()
-
-    def on_choose_audio(self):
-        kdlg_filters = ["Audio (*.mp3 *.wav)", "All files (*.*)"]
-        zen_patterns = ["*.mp3", "*.wav"]
-        qt_filter = "Audio (*.mp3 *.wav);;All files (*.*)"
-        path = cascade_get_open_file(self, "Choose audio MP3 or WAV", kdlg_filters, zen_patterns, qt_filter)
-        if path:
-            self.audio_path = path
-            self.aud_label.setText(f"Audio: {path}")
-            self.append_log(f"Audio: {path}")
-            self._maybe_enable_render()
-
-    # -------- render pipeline --------
-
-    def on_render_clicked(self):
-        try:
-            ensure_ffmpeg()
-        except RuntimeError as e:
-            self.append_log(str(e)); self.status.setText("ffmpeg not found"); return
-
-        if not (self.image_path and self.audio_path):
-            self.status.setText("Choose image and audio"); return
-
-        title = self.title_input.text().strip() or datetime.datetime.now().strftime("panek-video-%Y%m%d-%H%M%S")
-        title = sanitize_filename(title)
-
-        self.audio_duration = ffprobe_duration_seconds(self.audio_path)
-        self.progress.setRange(0,100); self.progress.setValue(0)
-
-        self.out_path = os.path.abspath(os.path.join(self.output_dir, f"{title}.mp4"))
-        cmd = build_ffmpeg_cmd(self.image_path, self.audio_path, self.out_path, title)
-        self.append_log("Starting ffmpeg:"); self.append_log(" ".join(cmd)); self.status.setText("Rendering...")
-
-        self.proc = QProcess(self)
-        self.proc.setProcessChannelMode(QProcess.MergedChannels)
-        self.proc.readyReadStandardError.connect(self.on_ffmpeg_output)
-        self.proc.readyReadStandardOutput.connect(self.on_ffmpeg_output)
-        self.proc.finished.connect(self.on_ffmpeg_finished)
-        self.proc.start(cmd[0], cmd[1:])
-
-    def on_ffmpeg_output(self):
-        if not self.proc: return
-        data = (bytes(self.proc.readAllStandardError()) + bytes(self.proc.readAllStandardOutput())).decode("utf-8", errors="replace")
-        for line in data.strip().splitlines():
-            self.append_log(line)
+    def _read_progress(self):
+        """Read and parse progress data from ffmpeg's stdout."""
+        if not self.process:
+            return
+        output = self.process.readAllStandardOutput().data().decode(errors='ignore').strip()
+        
+        for line in output.splitlines():
+            # Parse progress lines like 'out_time_ms=12345000'
             m = re.search(r"out_time_ms=(\d+)", line)
             if m and self.audio_duration > 0:
-                pct = int(min(100, (int(m.group(1)) / 1_000_000 / self.audio_duration) * 100))
-                self.progress.setValue(pct); self.status.setText(f"Rendering {pct}%")
+                current_ms = int(m.group(1)) / 1_000_000.0
+                pct = int(min(100, (current_ms / self.audio_duration) * 100))
+                self.progress_updated.emit(pct)
 
-    def on_ffmpeg_finished(self, code: int, _status):
-        if code == 0:
-            self.progress.setValue(100); self.status.setText(f"Done: {self.out_path}")
-            self._post_success_prompt()
+    def _read_logs(self):
+        """Read log data from ffmpeg's stderr."""
+        if not self.process:
+            return
+        output = self.process.readAllStandardError().data().decode(errors='ignore').strip()
+        if output:
+            self.log_message.emit(output)
+
+    def _on_finished(self, exit_code, exit_status):
+        """
+        Handle the QProcess.finished signal.
+        Emits the custom process_finished signal for the UI.
+        """
+        if exit_code == 0:
+            self.log_message.emit(f"--- PROCESS COMPLETE ---")
+            self.log_message.emit(f"Output file: {self.output_path}")
+            self.progress_updated.emit(100)
         else:
-            self.status.setText(f"ffmpeg failed (code {code})")
+            self.log_message.emit(f"--- PROCESS FAILED (Code: {exit_code}) ---")
+        
+        self.process_finished.emit(exit_code, self.output_path)
 
-    def _post_success_prompt(self):
-        dlg = CompleteDialog(self.out_path, self)
-        result = dlg.exec_()  # Accepted: render another. Rejected or timeout: close.
+    def _build_ffmpeg_cmd(self, image_path: str, audio_path: str, out_path: str, title: str) -> list:
+        """Build the ffmpeg command list (from original script)."""
+        vf = f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2"
+        
+        # Note: -progress pipe:1 sends progress to stdout (which we read)
+        # -nostats is removed, as it prevents progress data from being emitted.
+        return [
+            "ffmpeg",
+            "-y", # This -y flag is now safe, as the UI has confirmed the overwrite
+            "-loop", "1", "-i", image_path,
+            "-i", audio_path,
+            "-c:v", "libx264", "-preset", "medium", "-crf", str(CRF), "-tune", "stillimage",
+            "-vf", vf, "-r", str(FPS), "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-shortest",
+            "-movflags", "+faststart",
+            "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+            "-metadata", f"title={title}",
+            "-progress", "pipe:1", # Send progress to stdout
+            out_path,
+        ]
+
+    def start_processing(self, image_path: str, audio_path: str, output_path: str, title: str):
+        """
+        Start the ffmpeg process. This is the main entry point.
+        Path and title are now calculated and validated by the UI.
+        """
+        if self.process.state() == QProcess.ProcessState.Running:
+            self.log_message.emit("Error: A process is already running.")
+            return
+
+        # 1. Get audio duration (blocking, but fast)
+        try:
+            self.audio_duration = ffprobe_duration_seconds(audio_path)
+            if self.audio_duration == 0.0:
+                self.log_message.emit("Error: Could not determine audio duration or audio is 0s long.")
+                self.process_finished.emit(-1, "") # Emit failure
+                return
+        except Exception as e:
+            self.log_message.emit(f"Error running ffprobe: {e}")
+            self.process_finished.emit(-1, "") # Emit failure
+            return
+
+        # 2. Store the output path for later reference
+        self.output_path = output_path
+
+        # 3. Build and run command
+        cmd_list = self._build_ffmpeg_cmd(image_path, audio_path, self.output_path, title)
+        
+        self.log_message.emit(f"Executing command: {' '.join(cmd_list)}")
+        
+        # Use start() which is non-blocking
+        self.process.start("ffmpeg", cmd_list[1:])
+
+    def cancel_process(self):
+        """Public method to cancel the running process."""
+        if self.process.state() == QProcess.ProcessState.Running:
+            self.log_message.emit("--- CANCELLING PROCESS ---")
+            self.process.terminate()
+
+# ---------- UI: Main Window ----------
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Minimalist Media Processor")
+        self.setMinimumSize(600, 700)
+
+        # Central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        self.main_layout = QVBoxLayout(central_widget)
+
+        # --- Asynchronous Runner ---
+        self.ffmpeg_runner = FFmpegRunner()
+
+        # --- UI Sections ---
+        self._create_io_widgets()
+        self._create_action_widgets()
+        self._create_status_widgets()
+        self._connect_signals()
+
+        # --- State ---
+        self.image_path = ""
+        self.audio_path = ""
+        self.output_dir = str(Path.home()) # Default to user's home directory
+        self.output_dir_edit.setText(self.output_dir)
+        self._check_inputs_ready() # Set initial button state
+
+    def _create_io_widgets(self):
+        """Create the input/output widgets using a clean form layout."""
+        io_layout = QFormLayout()
+        io_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+
+        # --- Image Path ---
+        self.image_path_edit = QLineEdit()
+        self.image_path_edit.setReadOnly(True)
+        self.image_path_edit.setPlaceholderText("Select an image file...")
+        self.image_browse_btn = QPushButton("Browse...")
+        
+        # --- Audio Path ---
+        self.audio_path_edit = QLineEdit()
+        self.audio_path_edit.setReadOnly(True)
+        self.audio_path_edit.setPlaceholderText("Select an audio file...")
+        self.audio_browse_btn = QPushButton("Browse...")
+        
+        # --- Output Dir ---
+        self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setReadOnly(True)
+        self.output_dir_browse_btn = QPushButton("Browse...")
+        
+        # --- Title ---
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("Optional (defaults to timestamp)")
+        
+        # Use helper to create the [LineEdit] [Button] widgets
+        io_layout.addRow("Image File:", self._create_browse_widget(self.image_path_edit, self.image_browse_btn))
+        io_layout.addRow("Audio File:", self._create_browse_widget(self.audio_path_edit, self.audio_browse_btn))
+        io_layout.addRow("Output Folder:", self._create_browse_widget(self.output_dir_edit, self.output_dir_browse_btn))
+        io_layout.addRow("Video Title:", self.title_edit)
+        
+        self.main_layout.addLayout(io_layout)
+
+    def _create_browse_widget(self, line_edit, button):
+        """Helper to create the LineEdit + Button combo."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(line_edit)
+        layout.addWidget(button)
+        return widget
+
+    def _create_action_widgets(self):
+        """Create the Start and Cancel buttons."""
+        action_layout = QHBoxLayout()
+        self.start_btn = QPushButton("Start Processing")
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setEnabled(False)
+        
+        action_layout.addStretch()
+        action_layout.addWidget(self.start_btn)
+        action_layout.addWidget(self.cancel_btn)
+        self.main_layout.addLayout(action_layout)
+
+    def _create_status_widgets(self):
+        """Create the status label, progress bar, and log view."""
+        self.status_label = QLabel("Idle")
+        self.status_label.setStyleSheet("font-style: italic;")
+        self.main_layout.addWidget(self.status_label)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        self.main_layout.addWidget(self.progress_bar)
+        
+        self.status_log = QTextEdit()
+        self.status_log.setReadOnly(True)
+        self.status_log.setStyleSheet("font-family: monospace;")
+        self.main_layout.addWidget(self.status_log)
+
+    def _connect_signals(self):
+        """Connect all widget and runner signals to their slots."""
+        # Button signals
+        self.image_browse_btn.clicked.connect(self._on_browse_image)
+        self.audio_browse_btn.clicked.connect(self._on_browse_audio)
+        self.output_dir_browse_btn.clicked.connect(self._on_browse_output_dir)
+        
+        self.start_btn.clicked.connect(self._start_processing)
+        self.cancel_btn.clicked.connect(self.ffmpeg_runner.cancel_process)
+        
+        # FFmpegRunner signals
+        self.ffmpeg_runner.process_started.connect(self._on_process_started)
+        self.ffmpeg_runner.process_finished.connect(self._on_process_finished)
+        self.ffmpeg_runner.log_message.connect(self.status_log.append)
+        self.ffmpeg_runner.progress_updated.connect(self._on_progress_update)
+
+    # --- File Dialog Slots ---
+    
+    def _on_browse_image(self):
+        """Open a native file dialog to select an image."""
+        qt_filter = "Images (*.jpg *.jpeg *.png *.webp);;All files (*.*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Choose Image", self.output_dir, qt_filter)
+        if path:
+            self.image_path = path
+            self.image_path_edit.setText(path)
+            self._check_inputs_ready()
+
+    def _on_browse_audio(self):
+        """Open a native file dialog to select audio."""
+        qt_filter = "Audio (*.mp3 *.wav);;All files (*.*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Choose Audio", self.output_dir, qt_filter)
+        if path:
+            self.audio_path = path
+            self.audio_path_edit.setText(path)
+            self._check_inputs_ready()
+    
+    def _on_browse_output_dir(self):
+        """Open a native directory dialog."""
+        path = QFileDialog.getExistingDirectory(self, "Choose Output Folder", self.output_dir)
+        if path:
+            self.output_dir = path
+            self.output_dir_edit.setText(path)
+            self._check_inputs_ready()
+
+    def _check_inputs_ready(self):
+        """Enable the start button only if all inputs are valid."""
+        ready = bool(self.image_path and self.audio_path and self.output_dir)
+        self.start_btn.setEnabled(ready)
+
+    # --- FFmpegRunner Slots ---
+
+    def _start_processing(self):
+        """
+        Trigger the runner to start processing.
+        Includes validation and overwrite checks.
+        """
+        # --- 1. Pre-flight validation checks ---
+        if not os.path.exists(self.image_path):
+            QMessageBox.warning(self, "Input Error", f"Image file not found:\n{self.image_path}")
+            return
+        
+        if not os.path.exists(self.audio_path):
+            QMessageBox.warning(self, "Input Error", f"Audio file not found:\n{self.audio_path}")
+            return
+        
+        if not os.path.isdir(self.output_dir):
+            QMessageBox.warning(self, "Input Error", f"Output directory not found:\n{self.output_dir}")
+            return
+        
+        # --- 2. Calculate output path and title ---
+        title_text = self.title_edit.text()
+        title = title_text.strip() or datetime.datetime.now().strftime("panek-video-%Y%m%d-%H%M%S")
+        title = sanitize_filename(title)
+        output_path = os.path.abspath(os.path.join(self.output_dir, f"{title}.mp4"))
+        
+        # --- 3. NEW: Implement overwrite check ---
+        if os.path.exists(output_path):
+            reply = QMessageBox.question(self, "Overwrite Confirmation", 
+                f"The file already exists:\n{output_path}\n\nDo you want to overwrite it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                QMessageBox.StandardButton.No) # Default to No
+            
+            if reply == QMessageBox.StandardButton.No:
+                self.status_label.setText("Idle. Overwrite cancelled by user.")
+                return
+        # --- End of new checks ---
+        
+        # 4. Start the runner
+        self.ffmpeg_runner.start_processing(
+            self.image_path,
+            self.audio_path,
+            output_path,  # Pass the final, confirmed path
+            title         # Pass the sanitized title
+        )
+
+    def _on_process_started(self):
+        """Update UI to reflect the "running" state."""
+        self.status_log.clear()
+        self.status_label.setText("Processing...")
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
+        self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        self._set_inputs_enabled(False)
+
+    def _on_process_finished(self, exit_code, output_path):
+        """Update UI to reflect the "finished" state."""
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self._set_inputs_enabled(True)
+        self.progress_bar.setVisible(False)
+
+        if exit_code == 0:
+            self.status_label.setText("Process complete.")
+            self.progress_bar.setValue(100)
+            self._show_complete_dialog(output_path)
+        else:
+            self.status_label.setText(f"Process failed (Code: {exit_code})")
+            self.progress_bar.setValue(0)
+    
+    def _on_progress_update(self, pct):
+        """Update the progress bar and status label."""
+        self.progress_bar.setValue(pct)
+        self.status_label.setText(f"Processing... {pct}%")
+
+    def _set_inputs_enabled(self, enabled):
+        """Enable or disable all input widgets to prevent errors during render."""
+        self.image_browse_btn.setEnabled(enabled)
+        self.audio_browse_btn.setEnabled(enabled)
+        self.output_dir_browse_btn.setEnabled(enabled)
+        self.title_edit.setEnabled(enabled)
+    
+    def _show_complete_dialog(self, output_path):
+        """Show the custom "Complete" dialog."""
+        dlg = CompleteDialog(output_path, self)
+        result = dlg.exec()
+        
+        # Use QDialog.Accepted enum
         if result == QDialog.Accepted:
             self._reset_for_next()
         else:
             QApplication.instance().quit()
 
     def _reset_for_next(self):
-        self.image_path = ""; self.audio_path = ""; self.out_path = ""
-        self.img_label.setText("Image: not selected")
-        self.aud_label.setText("Audio: not selected")
-        self.progress.setValue(0); self.status.setText("Idle")
-        self.make_btn.setEnabled(False)
-        self._apply_render_style(enabled=False)
+        """Clear inputs to prepare for the next render."""
+        self.image_path = ""
+        self.audio_path = ""
+        self.image_path_edit.clear()
+        self.audio_path_edit.clear()
+        self.title_edit.clear()
+        self.status_log.clear()
+        self.status_label.setText("Idle")
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        self.start_btn.setEnabled(False)
 
-# ---------- app ----------
-
-def main():
-    app = QApplication(sys.argv)
-    ui = MainUI(); ui.show()
-    sys.exit(app.exec_())
+# ---------- Application Entry Point ----------
 
 if __name__ == "__main__":
-    main()
+    # Ensure ffmpeg/ffprobe exist before launching the app
+    try:
+        ensure_ffmpeg()
+    except RuntimeError as e:
+        # If app fails to init, show a critical error before the main loop
+        app_temp = QApplication.instance() or QApplication(sys.argv)
+        QMessageBox.critical(None, "Fatal Error", f"{e}\nPlease install ffmpeg and ensure it is in your system's PATH.")
+        sys.exit(1)
+
+    # Initialize the Qt Application
+    app = QApplication(sys.argv)
+
+    # Apply the dark theme globally
+    qdarktheme.setup_theme("dark") 
+
+    # Create and show the main window
+    window = MainWindow()
+    window.show()
+
+    # Start the Qt event loop
+    sys.exit(app.exec())
+
