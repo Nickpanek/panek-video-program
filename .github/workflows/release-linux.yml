@@ -1,4 +1,35 @@
-- name: Python deps
-     run: |
-       python -m pip install --upgrade pip
-       pip install PySide6 qdarktheme pyinstaller
+name: release-linux
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build deps
+        run: |
+          python -m pip install -U pip wheel
+          pip install PySide6 pyqtdarktheme pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller --noconfirm \
+            --name "panek-video-program" \
+            --windowed \
+            panek_video_program.py
+          ls -la dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: panek-video-program-linux
+          path: dist/panek-video-program/*
