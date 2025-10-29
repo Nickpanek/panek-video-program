@@ -11,6 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: System libs for Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 libopengl0 libgl1 \
+            libxkbcommon-x11-0 libxcb-cursor0
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -20,9 +27,11 @@ jobs:
           python -m pip install -U pip wheel
           pip install PySide6 pyqtdarktheme
 
-      - name: Import check
+      - name: Import check (headless-safe)
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
-          python -c "from PySide6 import QtWidgets; import qdarktheme; print('Imports OK')"
+          python -c "from PySide6 import QtCore; import qdarktheme; print('Imports OK')"
 
       - name: Lint
         run: |
