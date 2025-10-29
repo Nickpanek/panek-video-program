@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Panek Video Program - Refactored PySide6 Edition (Single File, v3)
+Panek Video Program - Refactored PySide6 Edition (Single File, internal v4)
 
 This application is a single-file refactor of the original PyQt5 script,
 built using PySide6 and adhering to the principles outlined in
@@ -16,6 +16,8 @@ Version 3 Changes:
   as suggested by the provided analysis.
 - Refactored path/title generation from the runner to the UI class
   to facilitate the overwrite check.
+
+This software uses FFmpeg (https://ffmpeg.org) licensed under the LGPL/GPL.
 """
 
 import sys
@@ -91,7 +93,7 @@ class CompleteDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Render Complete")
         self.setModal(True)
-        self.resize(520, 200)
+        self.resize(520, 250)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -118,7 +120,8 @@ class CompleteDialog(QDialog):
     def _refresh_text(self):
         """Update the label text."""
         self.msg.setText(
-            f"Video created successfully:<br><code>{self.out_path}</code>"
+            f"Video created successfully:<br><code>{self.out_path}</code><br><br>"
+            f"<small>Powered by <a href='https://ffmpeg.org'>FFmpeg</a> (LGPL/GPL)</small>"
         )
         self.close_btn.setText(f"Close (in {self.seconds})")
 
@@ -256,8 +259,8 @@ class FFmpegRunner(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Minimalist Media Processor")
-        self.setMinimumSize(600, 700)
+        self.setWindowTitle("Panek Video Program - Powered by FFmpeg")
+        self.setMinimumSize(600, 750)
 
         # Central widget and main layout
         central_widget = QWidget()
@@ -271,6 +274,7 @@ class MainWindow(QMainWindow):
         self._create_io_widgets()
         self._create_action_widgets()
         self._create_status_widgets()
+        self._create_footer()
         self._connect_signals()
 
         # --- State ---
@@ -351,6 +355,20 @@ class MainWindow(QMainWindow):
         self.status_log.setReadOnly(True)
         self.status_log.setStyleSheet("font-family: monospace;")
         self.main_layout.addWidget(self.status_log)
+
+    def _create_footer(self):
+        """Create footer with FFmpeg attribution."""
+        footer = QLabel()
+        footer.setText(
+            '<div style="text-align: center; color: #888; font-size: 11px; padding: 5px;">'
+            'This software uses <a href="https://ffmpeg.org">FFmpeg</a> licensed under the '
+            '<a href="https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html">LGPL v2.1</a> or later'
+            '</div>'
+        )
+        footer.setTextFormat(Qt.TextFormat.RichText)
+        footer.setOpenExternalLinks(True)
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(footer)
 
     def _connect_signals(self):
         """Connect all widget and runner signals to their slots."""
@@ -532,4 +550,3 @@ if __name__ == "__main__":
 
     # Start the Qt event loop
     sys.exit(app.exec())
-
