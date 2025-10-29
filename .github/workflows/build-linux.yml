@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install deps
         run: |
@@ -21,13 +21,10 @@ jobs:
           pip install PySide6 pyqtdarktheme
 
       - name: Import check
-        run: python - <<'PY'
-from PySide6 import QtWidgets  # import sanity
-import qdarktheme              # module name is qdarktheme
-print("Imports OK")
-PY
+        run: |
+          python -c "from PySide6 import QtWidgets; import qdarktheme; print('Imports OK')"
 
-      - name: Lint py
+      - name: Lint
         run: |
           pip install pyflakes
           pyflakes panek_video_program.py || true
