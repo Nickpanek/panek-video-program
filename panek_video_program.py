@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Panek Video Program - Refactored PySide6 Edition (Single File, internal v4)
+Panek Video Program - Enhanced Edition (v3.0)
 
-This application is a single-file refactor of the original PyQt5 script,
-built using PySide6 and adhering to the principles outlined in
-"Architecting a Modern Python Desktop Application":
+This application is a video creation and editing tool built with PySide6.
+
+Version 3.0 New Features:
+- Text Overlays: Add custom text to your videos with position and style controls
+- Video File Input: Use video files as input, not just images
+- Fade Transitions: Add professional fade in/out effects to video and audio
+
+Previous features:
 - Modern PySide6 Framework
 - Minimalist UI with a Global Dark Theme (pyqtdarktheme)
 - Asynchronous Backend (FFmpegRunner with QProcess)
 - Decoupled UI and Logic (Signals and Slots)
 - Simplified Native Dialogs (QFileDialog)
-
-Version 3 Changes:
-- Added a "Confirm Overwrite" dialog if the output file already exists,
-  as suggested by the provided analysis.
-- Refactored path/title generation from the runner to the UI class
-  to facilitate the overwrite check.
+- Overwrite protection and pre-flight validation
 
 This software uses FFmpeg (https://ffmpeg.org) licensed under the LGPL/GPL.
 """
@@ -33,8 +33,10 @@ from PySide6.QtCore import QObject, QProcess, Signal, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton,
     QFileDialog, QLineEdit, QHBoxLayout, QProgressBar, QTextEdit,
-    QDialog, QDialogButtonBox, QMainWindow, QFormLayout, QMessageBox
+    QDialog, QDialogButtonBox, QMainWindow, QFormLayout, QMessageBox,
+    QComboBox, QSpinBox, QCheckBox, QDoubleSpinBox, QGroupBox, QColorDialog
 )
+from PySide6.QtGui import QColor
 
 # Import the dark theme library
 # Requires: pip install pyqtdarktheme
@@ -82,6 +84,11 @@ def ffprobe_duration_seconds(path: str) -> float:
         return float(proc.stdout.strip())
     except Exception:
         return 0.0
+
+def is_video_file(path: str) -> bool:
+    """Check if a file is a video file based on extension."""
+    video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg'}
+    return Path(path).suffix.lower() in video_extensions
 
 # ---------- UI: Complete Dialog ----------
 
@@ -195,28 +202,96 @@ class FFmpegRunner(QObject):
         
         self.process_finished.emit(exit_code, self.output_path)
 
-    def _build_ffmpeg_cmd(self, image_path: str, audio_path: str, out_path: str, title: str) -> list:
-        """Build the ffmpeg command list (from original script)."""
-        vf = f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2"
-        
-        # Note: -progress pipe:1 sends progress to stdout (which we read)
-        # -nostats is removed, as it prevents progress data from being emitted.
-        return [
-            "ffmpeg",
-            "-y", # This -y flag is now safe, as the UI has confirmed the overwrite
-            "-loop", "1", "-i", image_path,
-            "-i", audio_path,
-            "-c:v", "libx264", "-preset", "medium", "-crf", str(CRF), "-tune", "stillimage",
-            "-vf", vf, "-r", str(FPS), "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-shortest",
+    def _build_ffmpeg_cmd(self, media_path: str, audio_path: str, out_path: str, title: str,
+                          text_overlay: str = "", text_position: str = "center", text_size: int = 48,
+                          text_color: str = "white", fade_in: float = 0.0, fade_out: float = 0.0,
+                          media_duration: float = 0.0) -> list:
+        """Build the ffmpeg command list with support for video input, text overlays, and fades."""
+
+        # Build video filter chain
+        vf_filters = []
+
+        # Scaling and padding filter (works for both image and video)
+        vf_filters.append(f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2")
+
+        # Add fade filters if requested
+        if fade_in > 0:
+            vf_filters.append(f"fade=t=in:st=0:d={fade_in}")
+        if fade_out > 0:
+            fade_start = max(0, media_duration - fade_out)
+            vf_filters.append(f"fade=t=out:st={fade_start}:d={fade_out}")
+
+        # Add text overlay if provided
+        if text_overlay:
+            # Escape text for FFmpeg
+            safe_text = text_overlay.replace(":", "\\:").replace("'", "\\'")
+
+            # Calculate position
+            if text_position == "top":
+                x_pos, y_pos = "(w-text_w)/2", "50"
+            elif text_position == "bottom":
+                x_pos, y_pos = "(w-text_w)/2", "h-th-50"
+            else:  # center
+                x_pos, y_pos = "(w-text_w)/2", "(h-text_h)/2"
+
+            vf_filters.append(f"drawtext=text='{safe_text}':fontsize={text_size}:fontcolor={text_color}:x={x_pos}:y={y_pos}")
+
+        # Combine all video filters
+        vf = ",".join(vf_filters)
+
+        # Build audio filter chain
+        af_filters = []
+        if fade_in > 0:
+            af_filters.append(f"afade=t=in:st=0:d={fade_in}")
+        if fade_out > 0:
+            fade_start = max(0, media_duration - fade_out)
+            af_filters.append(f"afade=t=out:st={fade_start}:d={fade_out}")
+
+        # Check if input is video or image
+        is_video = is_video_file(media_path)
+
+        # Build command
+        cmd = ["ffmpeg", "-y"]
+
+        # Input handling: video vs image
+        if is_video:
+            cmd.extend(["-i", media_path])
+        else:
+            cmd.extend(["-loop", "1", "-i", media_path])
+
+        # Audio input
+        cmd.extend(["-i", audio_path])
+
+        # Video encoding settings
+        if is_video:
+            cmd.extend(["-c:v", "libx264", "-preset", "medium", "-crf", str(CRF)])
+        else:
+            cmd.extend(["-c:v", "libx264", "-preset", "medium", "-crf", str(CRF), "-tune", "stillimage"])
+
+        # Video filters
+        cmd.extend(["-vf", vf, "-r", str(FPS), "-pix_fmt", "yuv420p"])
+
+        # Audio encoding and filters
+        cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
+        if af_filters:
+            cmd.extend(["-af", ",".join(af_filters)])
+
+        cmd.extend(["-shortest"])
+
+        # Optimization and metadata
+        cmd.extend([
             "-movflags", "+faststart",
             "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
             "-metadata", f"title={title}",
-            "-progress", "pipe:1", # Send progress to stdout
-            out_path,
-        ]
+            "-progress", "pipe:1",
+            out_path
+        ])
 
-    def start_processing(self, image_path: str, audio_path: str, output_path: str, title: str):
+        return cmd
+
+    def start_processing(self, media_path: str, audio_path: str, output_path: str, title: str,
+                        text_overlay: str = "", text_position: str = "center", text_size: int = 48,
+                        text_color: str = "white", fade_in: float = 0.0, fade_out: float = 0.0):
         """
         Start the ffmpeg process. This is the main entry point.
         Path and title are now calculated and validated by the UI.
@@ -241,10 +316,14 @@ class FFmpegRunner(QObject):
         self.output_path = output_path
 
         # 3. Build and run command
-        cmd_list = self._build_ffmpeg_cmd(image_path, audio_path, self.output_path, title)
-        
+        cmd_list = self._build_ffmpeg_cmd(
+            media_path, audio_path, self.output_path, title,
+            text_overlay, text_position, text_size, text_color,
+            fade_in, fade_out, self.audio_duration
+        )
+
         self.log_message.emit(f"Executing command: {' '.join(cmd_list)}")
-        
+
         # Use start() which is non-blocking
         self.process.start("ffmpeg", cmd_list[1:])
 
@@ -259,8 +338,8 @@ class FFmpegRunner(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Panek Video Program - Powered by FFmpeg")
-        self.setMinimumSize(600, 750)
+        self.setWindowTitle("Panek Video Program - Enhanced Edition v3.0")
+        self.setMinimumSize(700, 900)
 
         # Central widget and main layout
         central_widget = QWidget()
@@ -272,16 +351,19 @@ class MainWindow(QMainWindow):
 
         # --- UI Sections ---
         self._create_io_widgets()
+        self._create_text_overlay_widgets()
+        self._create_fade_widgets()
         self._create_action_widgets()
         self._create_status_widgets()
         self._create_footer()
         self._connect_signals()
 
         # --- State ---
-        self.image_path = ""
+        self.media_path = ""
         self.audio_path = ""
         self.output_dir = str(Path.home()) # Default to user's home directory
         self.output_dir_edit.setText(self.output_dir)
+        self.text_color = "white"  # Default text color
         self._check_inputs_ready() # Set initial button state
 
     def _create_io_widgets(self):
@@ -289,33 +371,33 @@ class MainWindow(QMainWindow):
         io_layout = QFormLayout()
         io_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
 
-        # --- Image Path ---
-        self.image_path_edit = QLineEdit()
-        self.image_path_edit.setReadOnly(True)
-        self.image_path_edit.setPlaceholderText("Select an image file...")
-        self.image_browse_btn = QPushButton("Browse...")
-        
+        # --- Media Path (Image or Video) ---
+        self.media_path_edit = QLineEdit()
+        self.media_path_edit.setReadOnly(True)
+        self.media_path_edit.setPlaceholderText("Select an image or video file...")
+        self.media_browse_btn = QPushButton("Browse...")
+
         # --- Audio Path ---
         self.audio_path_edit = QLineEdit()
         self.audio_path_edit.setReadOnly(True)
         self.audio_path_edit.setPlaceholderText("Select an audio file...")
         self.audio_browse_btn = QPushButton("Browse...")
-        
+
         # --- Output Dir ---
         self.output_dir_edit = QLineEdit()
         self.output_dir_edit.setReadOnly(True)
         self.output_dir_browse_btn = QPushButton("Browse...")
-        
+
         # --- Title ---
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("Optional (defaults to timestamp)")
-        
+
         # Use helper to create the [LineEdit] [Button] widgets
-        io_layout.addRow("Image File:", self._create_browse_widget(self.image_path_edit, self.image_browse_btn))
+        io_layout.addRow("Media File:", self._create_browse_widget(self.media_path_edit, self.media_browse_btn))
         io_layout.addRow("Audio File:", self._create_browse_widget(self.audio_path_edit, self.audio_browse_btn))
         io_layout.addRow("Output Folder:", self._create_browse_widget(self.output_dir_edit, self.output_dir_browse_btn))
         io_layout.addRow("Video Title:", self.title_edit)
-        
+
         self.main_layout.addLayout(io_layout)
 
     def _create_browse_widget(self, line_edit, button):
@@ -326,6 +408,76 @@ class MainWindow(QMainWindow):
         layout.addWidget(line_edit)
         layout.addWidget(button)
         return widget
+
+    def _create_text_overlay_widgets(self):
+        """Create text overlay controls in a group box."""
+        group_box = QGroupBox("Text Overlay (Optional)")
+        layout = QFormLayout()
+
+        # Text content
+        self.text_overlay_edit = QLineEdit()
+        self.text_overlay_edit.setPlaceholderText("Enter text to overlay on video...")
+        layout.addRow("Text:", self.text_overlay_edit)
+
+        # Text position
+        self.text_position_combo = QComboBox()
+        self.text_position_combo.addItems(["Top", "Center", "Bottom"])
+        self.text_position_combo.setCurrentText("Center")
+        layout.addRow("Position:", self.text_position_combo)
+
+        # Text size
+        self.text_size_spin = QSpinBox()
+        self.text_size_spin.setRange(12, 200)
+        self.text_size_spin.setValue(48)
+        self.text_size_spin.setSuffix(" pt")
+        layout.addRow("Size:", self.text_size_spin)
+
+        # Text color button
+        self.text_color_btn = QPushButton("Choose Color")
+        self.text_color_btn.clicked.connect(self._choose_text_color)
+        color_widget = QWidget()
+        color_layout = QHBoxLayout(color_widget)
+        color_layout.setContentsMargins(0, 0, 0, 0)
+        self.text_color_preview = QLabel("      ")
+        self.text_color_preview.setStyleSheet("background-color: white; border: 1px solid gray;")
+        color_layout.addWidget(self.text_color_preview)
+        color_layout.addWidget(self.text_color_btn)
+        color_layout.addStretch()
+        layout.addRow("Color:", color_layout)
+
+        group_box.setLayout(layout)
+        self.main_layout.addWidget(group_box)
+
+    def _create_fade_widgets(self):
+        """Create fade transition controls in a group box."""
+        group_box = QGroupBox("Fade Transitions (Optional)")
+        layout = QFormLayout()
+
+        # Fade in duration
+        self.fade_in_spin = QDoubleSpinBox()
+        self.fade_in_spin.setRange(0, 10)
+        self.fade_in_spin.setValue(0)
+        self.fade_in_spin.setSingleStep(0.5)
+        self.fade_in_spin.setSuffix(" sec")
+        layout.addRow("Fade In:", self.fade_in_spin)
+
+        # Fade out duration
+        self.fade_out_spin = QDoubleSpinBox()
+        self.fade_out_spin.setRange(0, 10)
+        self.fade_out_spin.setValue(0)
+        self.fade_out_spin.setSingleStep(0.5)
+        self.fade_out_spin.setSuffix(" sec")
+        layout.addRow("Fade Out:", self.fade_out_spin)
+
+        group_box.setLayout(layout)
+        self.main_layout.addWidget(group_box)
+
+    def _choose_text_color(self):
+        """Open color picker dialog for text color."""
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.text_color = color.name()
+            self.text_color_preview.setStyleSheet(f"background-color: {color.name()}; border: 1px solid gray;")
 
     def _create_action_widgets(self):
         """Create the Start and Cancel buttons."""
@@ -373,13 +525,13 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         """Connect all widget and runner signals to their slots."""
         # Button signals
-        self.image_browse_btn.clicked.connect(self._on_browse_image)
+        self.media_browse_btn.clicked.connect(self._on_browse_media)
         self.audio_browse_btn.clicked.connect(self._on_browse_audio)
         self.output_dir_browse_btn.clicked.connect(self._on_browse_output_dir)
-        
+
         self.start_btn.clicked.connect(self._start_processing)
         self.cancel_btn.clicked.connect(self.ffmpeg_runner.cancel_process)
-        
+
         # FFmpegRunner signals
         self.ffmpeg_runner.process_started.connect(self._on_process_started)
         self.ffmpeg_runner.process_finished.connect(self._on_process_finished)
@@ -387,14 +539,14 @@ class MainWindow(QMainWindow):
         self.ffmpeg_runner.progress_updated.connect(self._on_progress_update)
 
     # --- File Dialog Slots ---
-    
-    def _on_browse_image(self):
-        """Open a native file dialog to select an image."""
-        qt_filter = "Images (*.jpg *.jpeg *.png *.webp);;All files (*.*)"
-        path, _ = QFileDialog.getOpenFileName(self, "Choose Image", self.output_dir, qt_filter)
+
+    def _on_browse_media(self):
+        """Open a native file dialog to select an image or video."""
+        qt_filter = "Media Files (*.jpg *.jpeg *.png *.webp *.mp4 *.mov *.avi *.mkv *.webm *.flv *.wmv *.m4v *.mpg *.mpeg);;Images (*.jpg *.jpeg *.png *.webp);;Videos (*.mp4 *.mov *.avi *.mkv *.webm);;All files (*.*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Choose Media File", self.output_dir, qt_filter)
         if path:
-            self.image_path = path
-            self.image_path_edit.setText(path)
+            self.media_path = path
+            self.media_path_edit.setText(path)
             self._check_inputs_ready()
 
     def _on_browse_audio(self):
@@ -416,7 +568,7 @@ class MainWindow(QMainWindow):
 
     def _check_inputs_ready(self):
         """Enable the start button only if all inputs are valid."""
-        ready = bool(self.image_path and self.audio_path and self.output_dir)
+        ready = bool(self.media_path and self.audio_path and self.output_dir)
         self.start_btn.setEnabled(ready)
 
     # --- FFmpegRunner Slots ---
@@ -427,42 +579,55 @@ class MainWindow(QMainWindow):
         Includes validation and overwrite checks.
         """
         # --- 1. Pre-flight validation checks ---
-        if not os.path.exists(self.image_path):
-            QMessageBox.warning(self, "Input Error", f"Image file not found:\n{self.image_path}")
+        if not os.path.exists(self.media_path):
+            QMessageBox.warning(self, "Input Error", f"Media file not found:\n{self.media_path}")
             return
-        
+
         if not os.path.exists(self.audio_path):
             QMessageBox.warning(self, "Input Error", f"Audio file not found:\n{self.audio_path}")
             return
-        
+
         if not os.path.isdir(self.output_dir):
             QMessageBox.warning(self, "Input Error", f"Output directory not found:\n{self.output_dir}")
             return
-        
+
         # --- 2. Calculate output path and title ---
         title_text = self.title_edit.text()
         title = title_text.strip() or datetime.datetime.now().strftime("panek-video-%Y%m%d-%H%M%S")
         title = sanitize_filename(title)
         output_path = os.path.abspath(os.path.join(self.output_dir, f"{title}.mp4"))
-        
-        # --- 3. NEW: Implement overwrite check ---
+
+        # --- 3. Implement overwrite check ---
         if os.path.exists(output_path):
-            reply = QMessageBox.question(self, "Overwrite Confirmation", 
+            reply = QMessageBox.question(self, "Overwrite Confirmation",
                 f"The file already exists:\n{output_path}\n\nDo you want to overwrite it?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) # Default to No
-            
+
             if reply == QMessageBox.StandardButton.No:
                 self.status_label.setText("Idle. Overwrite cancelled by user.")
                 return
-        # --- End of new checks ---
-        
-        # 4. Start the runner
+
+        # --- 4. Collect text overlay and fade parameters ---
+        text_overlay = self.text_overlay_edit.text().strip()
+        text_position = self.text_position_combo.currentText().lower()
+        text_size = self.text_size_spin.value()
+        text_color = self.text_color
+        fade_in = self.fade_in_spin.value()
+        fade_out = self.fade_out_spin.value()
+
+        # --- 5. Start the runner with all parameters ---
         self.ffmpeg_runner.start_processing(
-            self.image_path,
+            self.media_path,
             self.audio_path,
-            output_path,  # Pass the final, confirmed path
-            title         # Pass the sanitized title
+            output_path,
+            title,
+            text_overlay,
+            text_position,
+            text_size,
+            text_color,
+            fade_in,
+            fade_out
         )
 
     def _on_process_started(self):
@@ -497,10 +662,16 @@ class MainWindow(QMainWindow):
 
     def _set_inputs_enabled(self, enabled):
         """Enable or disable all input widgets to prevent errors during render."""
-        self.image_browse_btn.setEnabled(enabled)
+        self.media_browse_btn.setEnabled(enabled)
         self.audio_browse_btn.setEnabled(enabled)
         self.output_dir_browse_btn.setEnabled(enabled)
         self.title_edit.setEnabled(enabled)
+        self.text_overlay_edit.setEnabled(enabled)
+        self.text_position_combo.setEnabled(enabled)
+        self.text_size_spin.setEnabled(enabled)
+        self.text_color_btn.setEnabled(enabled)
+        self.fade_in_spin.setEnabled(enabled)
+        self.fade_out_spin.setEnabled(enabled)
     
     def _show_complete_dialog(self, output_path):
         """Show the custom "Complete" dialog."""
@@ -515,11 +686,18 @@ class MainWindow(QMainWindow):
 
     def _reset_for_next(self):
         """Clear inputs to prepare for the next render."""
-        self.image_path = ""
+        self.media_path = ""
         self.audio_path = ""
-        self.image_path_edit.clear()
+        self.media_path_edit.clear()
         self.audio_path_edit.clear()
         self.title_edit.clear()
+        self.text_overlay_edit.clear()
+        self.text_position_combo.setCurrentText("Center")
+        self.text_size_spin.setValue(48)
+        self.text_color = "white"
+        self.text_color_preview.setStyleSheet("background-color: white; border: 1px solid gray;")
+        self.fade_in_spin.setValue(0)
+        self.fade_out_spin.setValue(0)
         self.status_log.clear()
         self.status_label.setText("Idle")
         self.progress_bar.setValue(0)
