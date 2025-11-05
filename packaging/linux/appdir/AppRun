@@ -1,0 +1,12 @@
+#!/bin/bash
+# AppRun script for Panek Video Program AppImage
+
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+
+# Export paths
+export PATH="${HERE}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+
+# Run the application
+exec "${HERE}/usr/bin/python3" "${HERE}/usr/bin/panek-video-program" "$@"

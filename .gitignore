@@ -211,3 +211,6 @@ __marimo__/
 *.deb
 dist/
 build/
+deb-build/
+AppDir/
+appimagetool-*.AppImage

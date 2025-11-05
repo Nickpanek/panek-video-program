@@ -1,0 +1,20 @@
+Package: panek-video-program
+Version: VERSION_PLACEHOLDER
+Section: video
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.8), python3-pip, ffmpeg
+Maintainer: Nick Panek <nick@patternripple.com>
+Homepage: https://github.com/Nickpanek/panek-video-program
+Description: Simple tool to create 1920x1080 MP4 videos from image and audio
+ Panek Video Program is a desktop application that takes one image
+ and one audio file and renders a clean 1920×1080 MP4 with AAC audio.
+ Designed for artists, musicians, designers, and anyone making YouTube,
+ TikTok, Loom, Shorts, Reels, or visual loop content.
+ .
+ Features:
+  - Supports JPG, PNG, WEBP images
+  - Supports MP3 and WAV audio
+  - Output: H.264 MP4, yuv420p, CRF 20
+  - Professional dark theme UI
+  - Pre-flight validation and overwrite protection
