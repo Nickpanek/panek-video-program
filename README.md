@@ -1,9 +1,31 @@
 # Panek Video Program
 
-A simple desktop tool that takes **one image** + **one audio file** and renders a clean **1920×1080 MP4** with AAC audio. Designed for artists, musicians, designers, and anyone making YouTube, TikTok, Loom, Shorts, Reels, or visual loop content. 
+A powerful desktop video editor that creates professional **1920×1080 MP4** videos with advanced features like text overlays, fade transitions, and support for both image and video inputs. Designed for artists, musicians, designers, and anyone making YouTube, TikTok, Loom, Shorts, Reels, or visual loop content.
 
-**Current Version:** v2.0.0 (PySide6) | [Download Latest](https://github.com/Nickpanek/panek-video-program/releases/latest)  
-**Legacy Version:** v1.0.1 (PyQt5) | [Download v1.0.1](https://github.com/Nickpanek/panek-video-program/releases/tag/v1.0.1)
+**Current Version:** v3.0.0 (Enhanced Edition) | [Download Latest](https://github.com/Nickpanek/panek-video-program/releases/latest)
+**Previous Version:** v2.0.0 (PySide6) | v1.0.1 (PyQt5)
+
+## ✨ NEW in v3.0: Enhanced Video Editing Features
+
+### 🎨 Text Overlays
+Add custom text to your videos with full styling control:
+- **Position Control**: Top, Center, or Bottom placement
+- **Font Sizing**: 12-200pt adjustable text size
+- **Color Picker**: Choose any color for your text
+- Perfect for titles, credits, captions, and watermarks
+
+### 🎬 Video File Input
+No longer limited to just images! Now supports:
+- **Video Formats**: MP4, MOV, AVI, MKV, WEBM, FLV, WMV, M4V, MPG, MPEG
+- **Image Formats**: JPG, PNG, WEBP (as before)
+- Intelligent processing based on input type
+
+### 🌅 Fade Transitions
+Add professional polish with fade effects:
+- **Video Fades**: Smooth fade in/out for visual content
+- **Audio Fades**: Synchronized audio fading
+- **Precise Control**: 0-10 seconds in 0.5 second increments
+- Independent fade in and fade out settings
 
 ## 🚀 v2.0: The PySide6 Modernization Refactor (Released!)
 
@@ -63,12 +85,22 @@ pip install PySide6 qdarktheme
 - **[🤖 AI Help Desk](https://chatgpt.com/g/g-68ff031d991081919e3da5b0b7ea683f-panek-video-program-help-desk)** - Get instant help with installation and debugging across all platforms
 
 ### Features
-- Supports **JPG, PNG, WEBP** images
+
+**New in v3.0:**
+- ✨ **Text Overlays** with position, size, and color controls
+- 🎬 **Video File Input** support (MP4, MOV, AVI, MKV, WEBM, and more)
+- 🌅 **Fade Transitions** for professional video and audio fading
+
+**Core Features:**
+- Supports **JPG, PNG, WEBP** images and **10+ video formats**
 - Supports **MP3 and WAV** audio
 - Output: **H.264 MP4**, yuv420p, CRF 20, faststart enabled
-- Native system file dialogs via QFileDialog (automatically maps to system's native dialog)
+- Native system file dialogs via QFileDialog
 - Render button only enables when both files are selected
 - Output filename auto-generates if no title is given
+- Real-time progress tracking
+- Overwrite protection with confirmation
+- Pre-flight file validation
 
 ### Requirements
 - **ffmpeg** and **ffprobe** must be installed
