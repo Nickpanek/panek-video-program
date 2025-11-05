@@ -26,6 +26,7 @@ import re
 import shutil
 import datetime
 import subprocess
+import html
 from pathlib import Path
 
 # Import all necessary PySide6 components
@@ -126,8 +127,10 @@ class CompleteDialog(QDialog):
 
     def _refresh_text(self):
         """Update the label text."""
+        # Escape the output path to prevent HTML injection
+        safe_path = html.escape(self.out_path)
         self.msg.setText(
-            f"Video created successfully:<br><code>{self.out_path}</code><br><br>"
+            f"Video created successfully:<br><code>{safe_path}</code><br><br>"
             f"<small>Powered by <a href='https://ffmpeg.org'>FFmpeg</a> (LGPL/GPL)</small>"
         )
         self.close_btn.setText(f"Close (in {self.seconds})")
@@ -156,12 +159,13 @@ class FFmpegRunner(QObject):
     def __init__(self):
         super().__init__()
         self.process = QProcess()
-        
+
         # We will read progress from stdout and logs from stderr
         self.process.readyReadStandardOutput.connect(self._read_progress)
         self.process.readyReadStandardError.connect(self._read_logs)
         self.process.finished.connect(self._on_finished)
         self.process.started.connect(self.process_started.emit)
+        self.process.errorOccurred.connect(self._on_error)
 
         self.audio_duration = 0.0
         self.output_path = ""
@@ -188,6 +192,23 @@ class FFmpegRunner(QObject):
         if output:
             self.log_message.emit(output)
 
+    def _on_error(self, error):
+        """
+        Handle QProcess errors (e.g., ffmpeg not found, permission denied).
+        """
+        error_messages = {
+            QProcess.ProcessError.FailedToStart: "Failed to start ffmpeg. Please ensure ffmpeg is installed and in your PATH.",
+            QProcess.ProcessError.Crashed: "FFmpeg process crashed unexpectedly.",
+            QProcess.ProcessError.Timedout: "FFmpeg process timed out.",
+            QProcess.ProcessError.WriteError: "Error writing to ffmpeg process.",
+            QProcess.ProcessError.ReadError: "Error reading from ffmpeg process.",
+            QProcess.ProcessError.UnknownError: "Unknown error occurred with ffmpeg process."
+        }
+        error_msg = error_messages.get(error, "Unknown error occurred.")
+        self.log_message.emit(f"--- PROCESS ERROR: {error_msg} ---")
+        # Emit finished signal with error code -1
+        self.process_finished.emit(-1, "")
+
     def _on_finished(self, exit_code, exit_status):
         """
         Handle the QProcess.finished signal.
@@ -199,7 +220,7 @@ class FFmpegRunner(QObject):
             self.progress_updated.emit(100)
         else:
             self.log_message.emit(f"--- PROCESS FAILED (Code: {exit_code}) ---")
-        
+
         self.process_finished.emit(exit_code, self.output_path)
 
     def _build_ffmpeg_cmd(self, media_path: str, audio_path: str, out_path: str, title: str,
@@ -223,8 +244,9 @@ class FFmpegRunner(QObject):
 
         # Add text overlay if provided
         if text_overlay:
-            # Escape text for FFmpeg
-            safe_text = text_overlay.replace(":", "\\:").replace("'", "\\'")
+            # Escape text for FFmpeg drawtext filter
+            # Must escape backslash first to avoid double-escaping
+            safe_text = text_overlay.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
             # Calculate position
             if text_position == "top":
