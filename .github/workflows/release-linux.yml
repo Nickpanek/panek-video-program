@@ -5,8 +5,11 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,21 +18,65 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install build deps
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 libopengl0 libgl1 \
+            libxkbcommon-x11-0 libxcb-cursor0 \
+            desktop-file-utils \
+            libfuse2 \
+            file \
+            wget
+
+      - name: Install Python dependencies
         run: |
           python -m pip install -U pip wheel
-          pip install PySide6 pyqtdarktheme pyinstaller
+          pip install PySide6 pyqtdarktheme
 
-      - name: Build executable
+      - name: Build AppImage
         run: |
-          pyinstaller --noconfirm \
-            --name "panek-video-program" \
-            --windowed \
-            panek_video_program.py
-          ls -la dist
+          cd packaging/linux
+          chmod +x build-appimage.sh
+          bash build-appimage.sh ${{ steps.get_version.outputs.VERSION }}
+          cd ../..
+          mv packaging/linux/PanekVideoProgram-*.AppImage ./
+          ls -la *.AppImage
 
-      - name: Upload artifact
+      - name: Build DEB package
+        run: |
+          cd packaging/linux
+          chmod +x build-deb.sh
+          bash build-deb.sh ${{ steps.get_version.outputs.VERSION }}
+          cd ../..
+          mv packaging/linux/panek-video-program_*.deb ./
+          ls -la *.deb
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            PanekVideoProgram-*.AppImage
+            panek-video-program_*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: panek-video-program-linux
-          path: dist/panek-video-program/*
+          name: panek-video-program-appimage
+          path: PanekVideoProgram-*.AppImage
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: panek-video-program-deb
+          path: panek-video-program_*.deb

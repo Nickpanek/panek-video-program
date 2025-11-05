@@ -1,0 +1,10 @@
+#!/bin/bash
+# Pre-removal script for Panek Video Program
+
+set -e
+
+# Uninstall Python dependencies (optional - commented out to avoid conflicts)
+# echo "Removing Python dependencies..."
+# pip3 uninstall -y PySide6 pyqtdarktheme || true
+
+exit 0

@@ -1,0 +1,24 @@
+#!/bin/bash
+# Post-installation script for Panek Video Program
+
+set -e
+
+# Install Python dependencies
+echo "Installing Python dependencies..."
+pip3 install --break-system-packages PySide6>=6.7.0 pyqtdarktheme>=2.1.0 || \
+pip3 install PySide6>=6.7.0 pyqtdarktheme>=2.1.0
+
+# Update desktop database
+if command -v update-desktop-database > /dev/null 2>&1; then
+    update-desktop-database -q
+fi
+
+# Update icon cache
+if command -v gtk-update-icon-cache > /dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+fi
+
+echo "Panek Video Program installed successfully!"
+echo "Run 'panek-video-program' to start the application."
+
+exit 0
